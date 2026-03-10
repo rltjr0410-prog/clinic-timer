@@ -1,54 +1,599 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="ko">
 <head>
-<meta charset="utf-8">
-<title>Clinic Timer</title>
-<style>
-body {font-family: Arial; text-align:center;}
-.timer {font-size:40px; margin:20px;}
-button {font-size:20px; margin:5px;}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>베드 타이머 보드 (온라인 공유)</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif; }
+    body { margin: 0; background:#f6f7fb; }
+    header {
+      position: sticky; top:0; z-index:10;
+      background: white; border-bottom:1px solid #e5e7ef;
+      padding: 12px 14px;
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+    }
+    .title { display:flex; flex-direction:column; gap:4px; }
+    .title b { font-size: 16px; }
+    .title small { color:#666; }
+    .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+    .btn {
+      border:1px solid #cfd6e6; background:#fff; border-radius:10px;
+      padding:8px 10px; cursor:pointer; font-weight:600;
+    }
+    .btn:hover { background:#f2f4ff; }
+    .btn.danger { border-color:#ffb3b3; }
+    .toggle { display:flex; gap:8px; align-items:center; font-weight:600; }
+
+    .grid {
+      padding: 12px;
+      display:grid;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 12px;
+    }
+    @media (min-width: 1000px){
+      .grid { grid-template-columns: repeat(3, minmax(320px, 1fr)); }
+    }
+    @media (min-width: 1400px){
+      .grid { grid-template-columns: repeat(4, minmax(320px, 1fr)); }
+    }
+    .card {
+      background:white; border:1px solid #e5e7ef; border-radius:14px;
+      padding:12px; box-shadow:0 1px 2px rgba(0,0,0,.03);
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .cardHeader { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .bedName { font-size: 16px; font-weight:800; }
+    .statusPill{
+      padding:6px 10px; border-radius:999px; font-weight:800; font-size:12px;
+      border:1px solid #e5e7ef; background:#f7f8fc;
+    }
+    .statusIdle { background:#f7f8fc; color:#333; }
+    .statusRunning { background:#e8f3ff; border-color:#b8dbff; color:#0b4f93; }
+    .statusSoon { background:#fff6db; border-color:#ffe59b; color:#7a5a00; }
+    .statusDone { background:#ffe8e8; border-color:#ffbdbd; color:#8a1212; }
+
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .field { display:flex; flex-direction:column; gap:6px; flex:1; min-width: 160px; }
+    label { font-size: 12px; color:#555; font-weight:700; }
+    input[type="text"], textarea {
+      width:100%;
+      border:1px solid #cfd6e6; border-radius:10px;
+      padding:8px 10px; font-size: 14px; outline:none;
+      background:#fff;
+    }
+    textarea { resize: vertical; min-height: 44px; }
+    .timerBox{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:10px 12px; border-radius:12px; border:1px solid #e5e7ef; background:#fafbff;
+    }
+    .timeBig { font-size: 28px; font-weight: 900; letter-spacing: .5px; }
+    .miniBtns { display:flex; gap:8px; flex-wrap:wrap; }
+    .miniBtns button{
+      border:1px solid #cfd6e6; background:#fff; border-radius:10px;
+      padding:7px 9px; cursor:pointer; font-weight:800; font-size:12px;
+    }
+    .miniBtns button:hover{ background:#f2f4ff; }
+    .miniBtns .go { border-color:#a9c1ff; }
+    .miniBtns .stop { border-color:#ffb3b3; }
+    .miniBtns .gray { background:#f7f8fc; }
+
+    .checks { display:grid; grid-template-columns: repeat(3, minmax(90px,1fr)); gap:8px; }
+    .checkItem{
+      display:flex; gap:8px; align-items:center;
+      border:1px solid #e5e7ef; background:#fff; border-radius:10px; padding:8px 10px;
+      font-size: 13px; font-weight:700; color:#333;
+    }
+    .checkItem input { width: 16px; height: 16px; }
+    .footerRow { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .muted { color:#666; font-size:12px; font-weight:700; }
+    .hint { color:#555; font-size:12px; line-height:1.4; }
+
+    .card.soon .timerBox { background:#fff8e6; border-color:#ffe59b; }
+    .card.done .timerBox { background:#ffecec; border-color:#ffbdbd; }
+    .warn { color:#0b4f93; font-weight:800; }
+  </style>
+
+  <!-- Firebase (Realtime Database) - v8 compat: 단일 HTML에 넣기 쉬움 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
 
 <body>
+<header>
+  <div class="title">
+    <b>베드 타이머 보드 (온라인 공유)</b>
+    <small>
+      같은 URL(#board=...)로 접속하면 실시간 동기화됩니다 ·
+      현재 보드: <span class="warn" id="boardName">-</span>
+    </small>
+  </div>
+  <div class="controls">
+    <label class="toggle">
+      <input id="soundToggle" type="checkbox" checked />
+      알림 소리(2분/30초/종료)
+    </label>
+    <button class="btn danger" id="resetAllBtn" title="모든 베드를 비웁니다">전체 초기화</button>
+  </div>
+</header>
 
-<h1>진료 타이머</h1>
-
-<div>
-<h2>원장1</h2>
-<div class="timer" id="t1">30</div>
-<button onclick="startTimer('t1')">Start</button>
-</div>
-
-<div>
-<h2>원장2</h2>
-<div class="timer" id="t2">30</div>
-<button onclick="startTimer('t2')">Start</button>
-</div>
-
-<div>
-<h2>치료실</h2>
-<div class="timer" id="t3">15</div>
-<button onclick="startTimer('t3')">Start</button>
-</div>
+<div class="grid" id="grid"></div>
 
 <script>
-function startTimer(id){
-let el=document.getElementById(id);
-let time=parseInt(el.innerText);
+(() => {
+  /**********************
+   * 0) Firebase 설정
+   * - 아래 firebaseConfig를 본인 프로젝트 값으로 교체하세요.
+   **********************/
+  const firebaseConfig = {
+    // TODO: 여기에 Firebase 콘솔에서 복사한 설정 붙여넣기
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "YOUR_PROJECT",
+    appId: "YOUR_APP_ID"
+  };
 
-let timer=setInterval(()=>{
-time--;
-el.innerText=time;
+  // 보드 이름: URL 해시에서 읽음 (예: ...#board=smile365)
+  function getBoardId() {
+    const h = (location.hash || "").replace(/^#/, "");
+    const params = new URLSearchParams(h);
+    return (params.get("board") || "default").trim() || "default";
+  }
+  const BOARD_ID = getBoardId();
+  document.getElementById("boardName").textContent = BOARD_ID;
 
-if(time<=0){
-clearInterval(timer);
-alert("시간 종료");
-}
+  /**********************
+   * 1) 기본 설정
+   **********************/
+  const BED_COUNT = 10;
+  const CHECK_ITEMS = ["침", "전침", "부항", "IR", "추나", "퇴실"];
 
-},1000);
-}
+  const PREWARN_1_MS = 2 * 60 * 1000;   // 종료 2분 전
+  const PREWARN_2_MS = 30 * 1000;       // 종료 30초 전
+
+  const $grid = document.getElementById("grid");
+  const $soundToggle = document.getElementById("soundToggle");
+  const $resetAllBtn = document.getElementById("resetAllBtn");
+
+  /**********************
+   * 2) 시간(서버 오프셋) 보정
+   * - 각 PC 시간이 조금 달라도 서버 기준으로 맞추기
+   **********************/
+  let timeOffsetMs = 0;
+  function nowCorrected() { return Date.now() + timeOffsetMs; }
+
+  /**********************
+   * 3) 알림 소리
+   **********************/
+  let audioCtx = null;
+  function beep(freq = 880, ms = 180) {
+    if (!$soundToggle.checked) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0.05;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      setTimeout(() => o.stop(), ms);
+    } catch (e) {}
+  }
+  function tripleBeep() {
+    beep(880, 140);
+    setTimeout(() => beep(660, 140), 170);
+    setTimeout(() => beep(880, 220), 340);
+  }
+
+  /**********************
+   * 4) 상태 모델
+   **********************/
+  const defaultBed = (i) => ({
+    id: i + 1,
+    label: `Bed ${i + 1}`,
+
+    patient: "",
+    memo: "",
+    checks: Object.fromEntries(CHECK_ITEMS.map(k => [k, false])),
+
+    presetMin: 15,
+
+    running: false,
+    endAtMs: null,        // 서버 보정된 epoch(ms) 기준으로 저장
+
+    // 경고음 중복 방지
+    warned2m: false,
+    warned30s: false,
+    doneBeeped: false
+  });
+
+  let state = Array.from({ length: BED_COUNT }, (_, i) => defaultBed(i));
+
+  /**********************
+   * 5) Firebase 연결 + 실시간 동기화
+   **********************/
+  let db = null;
+  let boardRef = null;
+  let suppressLocalWrite = false;
+  let writeTimer = null;
+
+  function initFirebase() {
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+
+      // 서버-클라이언트 시간 차이
+      db.ref(".info/serverTimeOffset").on("value", (snap) => {
+        timeOffsetMs = snap.val() || 0;
+      });
+
+      boardRef = db.ref(`boards/${BOARD_ID}`);
+
+      // 실시간 구독: 다른 PC에서 바꾼 내용 즉시 반영
+      boardRef.on("value", (snap) => {
+        const data = snap.val();
+        if (!data || !Array.isArray(data.beds)) return;
+
+        suppressLocalWrite = true;
+        state = normalizeBeds(data.beds);
+        renderAll();
+        suppressLocalWrite = false;
+      });
+
+      // 최초 데이터 없으면 초기값 세팅
+      boardRef.child("beds").get().then(snap => {
+        if (!snap.exists()) {
+          boardRef.set({ beds: state });
+        }
+      });
+
+    } catch (e) {
+      alert("Firebase 설정이 올바르지 않습니다. firebaseConfig를 확인해주세요.");
+      console.error(e);
+    }
+  }
+
+  function normalizeBeds(beds) {
+    return Array.from({ length: BED_COUNT }, (_, i) => {
+      const base = defaultBed(i);
+      const b = beds[i] || base;
+      const checks = Object.fromEntries(CHECK_ITEMS.map(k => [k, !!(b.checks && b.checks[k])]));
+      return {
+        ...base,
+        ...b,
+        id: i + 1,
+        checks,
+        presetMin: Number(b.presetMin || base.presetMin),
+        running: !!b.running,
+        endAtMs: b.endAtMs ? Number(b.endAtMs) : null,
+        warned2m: !!b.warned2m,
+        warned30s: !!b.warned30s,
+        doneBeeped: !!b.doneBeeped
+      };
+    });
+  }
+
+  // 너무 자주 쓰지 않도록 150ms 디바운스 후 저장
+  function scheduleSave() {
+    if (!boardRef || suppressLocalWrite) return;
+    clearTimeout(writeTimer);
+    writeTimer = setTimeout(() => {
+      boardRef.update({ beds: state });
+    }, 150);
+  }
+
+  /**********************
+   * 6) 타이머 로직
+   **********************/
+  function msLeft(bed) {
+    if (!bed.running || !bed.endAtMs) return bed.presetMin * 60 * 1000;
+    return Math.max(0, bed.endAtMs - nowCorrected());
+  }
+
+  function startWithPreset(i) {
+    const b = state[i];
+    const durMs = b.presetMin * 60 * 1000;
+    b.running = true;
+    b.endAtMs = nowCorrected() + durMs;
+
+    b.warned2m = false;
+    b.warned30s = false;
+    b.doneBeeped = false;
+
+    scheduleSave();
+    renderBed(i);
+  }
+
+  function pause(i) {
+    const b = state[i];
+    if (!b.running) return;
+
+    // 일시정지 시 남은 시간을 presetMin 대신 endAtMs 기반으로 "메모리"처럼 유지하려면 추가 구조가 필요합니다.
+    // MVP에서는 "일시정지=정지"로 처리(원하시면 남은시간 저장 버전으로도 바꿔드릴게요).
+    b.running = false;
+    b.endAtMs = null;
+
+    b.warned2m = false;
+    b.warned30s = false;
+    b.doneBeeped = false;
+
+    scheduleSave();
+    renderBed(i);
+  }
+
+  function endNow(i) {
+    const b = state[i];
+    b.running = false;
+    b.endAtMs = nowCorrected(); // 즉시 종료로 간주
+    b.warned2m = true;
+    b.warned30s = true;
+
+    if (!b.doneBeeped) {
+      b.doneBeeped = true;
+      tripleBeep();
+    }
+    scheduleSave();
+    renderBed(i);
+  }
+
+  function addMinutes(i, min) {
+    const b = state[i];
+    if (!b.running || !b.endAtMs) {
+      // 미실행일 때는 프리셋만 늘림(원하시면 "미실행에서도 카운트다운 준비"로도 가능)
+      b.presetMin = Math.max(1, b.presetMin + min);
+      scheduleSave();
+      renderBed(i);
+      return;
+    }
+    b.endAtMs += min * 60 * 1000;
+    b.warned2m = false;
+    b.warned30s = false;
+    b.doneBeeped = false;
+    scheduleSave();
+    renderBed(i);
+  }
+
+  function setPreset(i, min) {
+    const b = state[i];
+    b.presetMin = min;
+    // 실행 중이면 즉시 반영(원하시면 "실행 중 프리셋 변경은 금지"로 바꿀 수도 있어요)
+    if (b.running) {
+      b.endAtMs = nowCorrected() + min * 60 * 1000;
+      b.warned2m = false;
+      b.warned30s = false;
+      b.doneBeeped = false;
+    }
+    scheduleSave();
+    renderBed(i);
+  }
+
+  function resetBed(i) {
+    const old = state[i];
+    state[i] = defaultBed(i);
+    state[i].label = old.label || state[i].label;
+    scheduleSave();
+    renderBed(i);
+  }
+
+  /**********************
+   * 7) 렌더링
+   **********************/
+  const pad2 = n => String(n).padStart(2, "0");
+  const fmtMMSS = (ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const mm = Math.floor(s / 60);
+    const ss = s % 60;
+    return `${pad2(mm)}:${pad2(ss)}`;
+  };
+  const fmtHHMM = (msEpoch) => {
+    if (!msEpoch) return "-";
+    const d = new Date(msEpoch);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  function status(b) {
+    if (!b.running || !b.endAtMs) return "idle";
+    const left = Math.max(0, b.endAtMs - nowCorrected());
+    if (left === 0) return "done";
+    if (left <= PREWARN_1_MS) return "soon";
+    return "running";
+  }
+  function statusText(st) {
+    if (st === "running") return "진행중";
+    if (st === "soon") return "곧 종료";
+    if (st === "done") return "종료";
+    return "대기";
+  }
+  function pillClass(st) {
+    if (st === "running") return "statusRunning";
+    if (st === "soon") return "statusSoon";
+    if (st === "done") return "statusDone";
+    return "statusIdle";
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? "")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+  function escapeAttr(str){ return escapeHtml(str).replaceAll("\n"," "); }
+
+  function renderAll() {
+    $grid.innerHTML = "";
+    for (let i = 0; i < BED_COUNT; i++) {
+      const el = document.createElement("div");
+      el.className = "card";
+      el.id = `bed-${i}`;
+      $grid.appendChild(el);
+      renderBed(i);
+    }
+  }
+
+  function renderBed(i) {
+    const b = state[i];
+    const card = document.getElementById(`bed-${i}`);
+    if (!card) return;
+
+    const st = status(b);
+    const left = (b.running && b.endAtMs) ? Math.max(0, b.endAtMs - nowCorrected()) : (b.presetMin * 60 * 1000);
+
+    card.classList.toggle("soon", st === "soon");
+    card.classList.toggle("done", st === "done");
+
+    card.innerHTML = `
+      <div class="cardHeader">
+        <div>
+          <div class="bedName">${escapeHtml(b.label)}</div>
+          <div class="muted">프리셋: ${b.presetMin}분 · 보드: ${escapeHtml(BOARD_ID)}</div>
+        </div>
+        <div class="statusPill ${pillClass(st)}">${statusText(st)}</div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>환자 표시(자유 입력)</label>
+          <input type="text" data-k="patient" placeholder="예) 홍길동 / 010-**** / 메모 등" value="${escapeAttr(b.patient)}" />
+        </div>
+      </div>
+
+      <div class="timerBox">
+        <div>
+          <div class="timeBig">${fmtMMSS(left)}</div>
+          <div class="hint">종료 예정: <b>${(b.running && b.endAtMs) ? fmtHHMM(b.endAtMs) : "-"}</b></div>
+        </div>
+        <div style="text-align:right; display:flex; flex-direction:column; gap:8px;">
+          <div class="miniBtns">
+            <button class="gray" data-act="preset" data-min="10">10분</button>
+            <button class="gray" data-act="preset" data-min="15">15분</button>
+            <button class="gray" data-act="preset" data-min="20">20분</button>
+            <button class="gray" data-act="add" data-min="5">+5</button>
+          </div>
+          <div class="miniBtns">
+            ${b.running ? `<button class="stop" data-act="pause">정지</button>` : `<button class="go" data-act="start">시작</button>`}
+            <button class="stop" data-act="end">종료</button>
+            <button class="gray" data-act="reset">리셋</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>치료 순서 체크</label>
+        <div class="checks">
+          ${CHECK_ITEMS.map(k => `
+            <label class="checkItem">
+              <input type="checkbox" data-k="check:${escapeAttr(k)}" ${b.checks[k] ? "checked" : ""} />
+              ${escapeHtml(k)}
+            </label>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="field">
+        <label>메모</label>
+        <textarea data-k="memo" placeholder="예) 체위/강도/주의사항/다음 치료 등">${escapeHtml(b.memo)}</textarea>
+      </div>
+
+      <div class="footerRow">
+        <span class="muted">Bed ${i+1} · ${statusText(st)}</span>
+        <span class="muted">실시간 공유 ON</span>
+      </div>
+    `;
+
+    // 입력 이벤트 → 상태 수정 → 저장(디바운스)
+    card.querySelectorAll("[data-k]").forEach(el => {
+      const key = el.getAttribute("data-k");
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+        el.addEventListener("input", (e) => {
+          if (key === "patient") b.patient = e.target.value;
+          if (key === "memo") b.memo = e.target.value;
+          if (key.startsWith("check:")) {
+            const name = key.slice("check:".length);
+            b.checks[name] = e.target.checked;
+          }
+          scheduleSave();
+        });
+        el.addEventListener("change", (e) => {
+          if (key.startsWith("check:")) {
+            const name = key.slice("check:".length);
+            b.checks[name] = e.target.checked;
+            scheduleSave();
+          }
+        });
+      }
+    });
+
+    // 버튼
+    card.querySelectorAll("[data-act]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const act = btn.getAttribute("data-act");
+        if (act === "preset") setPreset(i, Number(btn.getAttribute("data-min")));
+        if (act === "start") startWithPreset(i);
+        if (act === "pause") pause(i);
+        if (act === "end") endNow(i);
+        if (act === "reset") resetBed(i);
+        if (act === "add") addMinutes(i, Number(btn.getAttribute("data-min")));
+      });
+    });
+  }
+
+  /**********************
+   * 8) 알림 처리(매초)
+   **********************/
+  function tick() {
+    for (let i = 0; i < BED_COUNT; i++) {
+      const b = state[i];
+      if (!b.running || !b.endAtMs) continue;
+
+      const left = Math.max(0, b.endAtMs - nowCorrected());
+
+      // 2분 전 1회 알림
+      if (!b.warned2m && left <= PREWARN_1_MS && left > PREWARN_2_MS) {
+        b.warned2m = true;
+        beep(740, 160);
+        scheduleSave(); // 다른 화면에도 "warned" 동기화
+      }
+
+      // 30초 전 1회 알림 (조금 더 강하게)
+      if (!b.warned30s && left <= PREWARN_2_MS && left > 0) {
+        b.warned30s = true;
+        beep(880, 160);
+        setTimeout(() => beep(880, 200), 180);
+        scheduleSave();
+      }
+
+      // 종료 시(0초) 1회 알림(트리플)
+      if (left === 0 && !b.doneBeeped) {
+        b.doneBeeped = true;
+        tripleBeep();
+        // 종료 상태 유지(원하시면 자동으로 running=false 처리도 가능)
+        scheduleSave();
+      }
+
+      renderBed(i);
+    }
+  }
+
+  /**********************
+   * 9) 상단 전체 초기화
+   **********************/
+  $resetAllBtn.addEventListener("click", () => {
+    const ok = confirm("정말 전체 초기화할까요? 모든 베드의 메모/체크/타이머가 초기화됩니다.");
+    if (!ok) return;
+    state = Array.from({ length: BED_COUNT }, (_, i) => defaultBed(i));
+    scheduleSave();
+    renderAll();
+  });
+
+  /**********************
+   * 실행
+   **********************/
+  initFirebase();
+  renderAll();
+  tick();
+  setInterval(tick, 1000);
+})();
 </script>
-
 </body>
 </html>
