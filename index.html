@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clinic Timer</title>
+<style>
+body {font-family: Arial; text-align:center;}
+.timer {font-size:40px; margin:20px;}
+button {font-size:20px; margin:5px;}
+</style>
+</head>
+
+<body>
+
+<h1>진료 타이머</h1>
+
+<div>
+<h2>원장1</h2>
+<div class="timer" id="t1">30</div>
+<button onclick="startTimer('t1')">Start</button>
+</div>
+
+<div>
+<h2>원장2</h2>
+<div class="timer" id="t2">30</div>
+<button onclick="startTimer('t2')">Start</button>
+</div>
+
+<div>
+<h2>치료실</h2>
+<div class="timer" id="t3">15</div>
+<button onclick="startTimer('t3')">Start</button>
+</div>
+
+<script>
+function startTimer(id){
+let el=document.getElementById(id);
+let time=parseInt(el.innerText);
+
+let timer=setInterval(()=>{
+time--;
+el.innerText=time;
+
+if(time<=0){
+clearInterval(timer);
+alert("시간 종료");
+}
+
+},1000);
+}
+</script>
+
+</body>
+</html>
